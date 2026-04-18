@@ -10,6 +10,10 @@ function oscReading(name: string, vote: -1 | 0 | 1): IndicatorReading {
     return { name, group: 'oscillator', value: 0, vote }
 }
 
+function exoReading(name: string, vote: -1 | 0 | 1): IndicatorReading {
+    return { name, group: 'exotic', value: 0, vote }
+}
+
 describe('scoreToSignal', () => {
     test('> 0.5 → STRONG BUY', () => {
         expect(scoreToSignal(0.6)).toBe('STRONG BUY')
@@ -99,5 +103,43 @@ describe('aggregate', () => {
         const result = aggregate([])
         expect(result.score).toBe(0)
         expect(result.signal).toBe('NEUTRAL')
+        expect(result.exoticRating).toBeNull()
+    })
+
+    test('no exotic readings → exoticRating is null and score ignores the group', () => {
+        const readings: IndicatorReading[] = [
+            ...Array.from({ length: 15 }, (_, idx) => maReading(`MA${idx}`, 1)),
+            ...Array.from({ length: 11 }, (_, idx) => oscReading(`OSC${idx}`, 1))
+        ]
+        const result = aggregate(readings)
+        expect(result.exoticRating).toBeNull()
+        expect(result.score).toBe(1)
+    })
+
+    test('exotic group included → three-way average, exoticRating populated', () => {
+        const readings: IndicatorReading[] = [
+            ...Array.from({ length: 15 }, (_, idx) => maReading(`MA${idx}`, 1)),
+            ...Array.from({ length: 11 }, (_, idx) => oscReading(`OSC${idx}`, 1)),
+            ...Array.from({ length: 6 },  (_, idx) => exoReading(`EXO${idx}`, -1))
+        ]
+        const result = aggregate(readings)
+        expect(result.maRating).toBe(1)
+        expect(result.oscRating).toBe(1)
+        expect(result.exoticRating).toBe(-1)
+        // (1 + 1 + -1) / 3 ≈ 0.333 → BUY tier
+        expect(result.score).toBeCloseTo(1 / 3, 5)
+        expect(result.signal).toBe('BUY')
+    })
+
+    test('exotic all +1 nudges a barely-buy into strong territory', () => {
+        const readings: IndicatorReading[] = [
+            ...Array.from({ length: 15 }, (_, idx) => maReading(`MA${idx}`, 1)),
+            ...Array.from({ length: 11 }, (_, idx) => oscReading(`OSC${idx}`, 0)),
+            ...Array.from({ length: 6 },  (_, idx) => exoReading(`EXO${idx}`, 1))
+        ]
+        const result = aggregate(readings)
+        // (1 + 0 + 1) / 3 ≈ 0.667 → STRONG BUY
+        expect(result.score).toBeCloseTo(2 / 3, 5)
+        expect(result.signal).toBe('STRONG BUY')
     })
 })

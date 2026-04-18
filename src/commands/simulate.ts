@@ -1,7 +1,7 @@
 import { validIntervals, OHLCV_LIMIT } from '../constants'
 import { fetchOhlcv, getLastPrice, isPairValid } from '../signals/market'
 import { computeComposite } from '../signals/aggregator'
-import { getValueFromArgv, getPositionalArg } from '../lib/argv'
+import { getValueFromArgv, getPositionalArg, isArgv } from '../lib/argv'
 import { simulateLogger } from '../lib/logger'
 
 function formatReadings(composite: ReturnType<typeof computeComposite>): string {
@@ -19,6 +19,7 @@ export async function runSimulate(argv: string[], commandIndex: number): Promise
         console.warn(`Both positional "${positional}" and --pair="${flagPair}" supplied; using --pair.`)
     const pair = flagPair ?? positional
     const interval = getValueFromArgv('--interval', argv) ?? '1m'
+    const exotic = isArgv('--exotic', argv) || isArgv('--exotic-indicators', argv)
 
     if(!pair) {
         console.error('--pair (or positional first argument) is required for the simulate command')
@@ -38,12 +39,15 @@ export async function runSimulate(argv: string[], commandIndex: number): Promise
     const tick = async (): Promise<void> => {
         try {
             const candles = await fetchOhlcv(pair, interval, OHLCV_LIMIT)
-            const composite = computeComposite(candles)
+            const composite = computeComposite(candles, { exotic })
             const price = await getLastPrice(pair)
+            const exoticPart = composite.exoticRating === null
+                ? ''
+                : ` Exo: ${composite.exoticRating.toFixed(2)}`
             simulateLogger(
                 `Pair: ${pair} | Interval: ${interval} | Price: ${price} | ` +
                 `Signal: ${composite.signal} (score ${composite.score.toFixed(3)}) | ` +
-                `MA: ${composite.maRating.toFixed(2)} Osc: ${composite.oscRating.toFixed(2)} | ` +
+                `MA: ${composite.maRating.toFixed(2)} Osc: ${composite.oscRating.toFixed(2)}${exoticPart} | ` +
                 formatReadings(composite)
             )
         } catch(tickError: unknown) {

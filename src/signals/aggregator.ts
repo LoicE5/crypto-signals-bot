@@ -25,22 +25,27 @@ function mean(values: number[]): number {
 }
 
 export function aggregate(readings: IndicatorReading[]): CompositeSignal {
-    const maVotes  = readings.filter(reading => reading.group === 'ma').map(reading => reading.vote)
-    const oscVotes = readings.filter(reading => reading.group === 'oscillator').map(reading => reading.vote)
+    const maVotes     = readings.filter(reading => reading.group === 'ma').map(reading => reading.vote)
+    const oscVotes    = readings.filter(reading => reading.group === 'oscillator').map(reading => reading.vote)
+    const exoticVotes = readings.filter(reading => reading.group === 'exotic').map(reading => reading.vote)
 
-    const maRating  = mean(maVotes)
-    const oscRating = mean(oscVotes)
-    const score = (maRating + oscRating) / 2
+    const maRating     = mean(maVotes)
+    const oscRating    = mean(oscVotes)
+    const exoticRating = exoticVotes.length > 0 ? mean(exoticVotes) : null
+    const score = exoticRating === null
+        ? (maRating + oscRating) / 2
+        : (maRating + oscRating + exoticRating) / 3
 
     return {
         signal: scoreToSignal(score),
         score,
         maRating,
         oscRating,
+        exoticRating,
         readings
     }
 }
 
-export function computeComposite(candles: OhlcvCandle[]): CompositeSignal {
-    return aggregate(allReadings(candles))
+export function computeComposite(candles: OhlcvCandle[], options: { exotic?: boolean } = {}): CompositeSignal {
+    return aggregate(allReadings(candles, options))
 }

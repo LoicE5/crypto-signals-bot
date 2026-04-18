@@ -5,6 +5,7 @@ import {
     IchimokuCloud
 } from 'technicalindicators'
 import { OhlcvCandle, IndicatorReading, IndicatorVote } from '../types'
+import { exoticReadings } from './indicators.exotic'
 
 // ---------- helpers ---------------------------------------------------------
 
@@ -383,6 +384,7 @@ export function oscillatorReadings(candles: OhlcvCandle[]): IndicatorReading[] {
     ]
 }
 
-export function allReadings(candles: OhlcvCandle[]): IndicatorReading[] {
-    return [...movingAverageReadings(candles), ...oscillatorReadings(candles)]
+export function allReadings(candles: OhlcvCandle[], options: { exotic?: boolean } = {}): IndicatorReading[] {
+    const base = [...movingAverageReadings(candles), ...oscillatorReadings(candles)]
+    return options.exotic ? [...base, ...exoticReadings(candles)] : base
 }

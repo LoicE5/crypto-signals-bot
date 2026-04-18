@@ -5,7 +5,7 @@ export type IndicatorVote = -1 | 0 | 1
 
 export interface IndicatorReading {
     name: string
-    group: 'ma' | 'oscillator'
+    group: 'ma' | 'oscillator' | 'exotic'
     value: number | undefined
     vote: IndicatorVote
 }
@@ -15,6 +15,7 @@ export interface CompositeSignal {
     score: number
     maRating: number
     oscRating: number
+    exoticRating: number | null
     readings: IndicatorReading[]
 }
 
@@ -24,6 +25,7 @@ export interface TickerRow {
     unix_time: number
     price: number | undefined
     signal: SignalValue | undefined
+    exoticRating?: number | null
     indicators?: IndicatorReading[]
 }
 

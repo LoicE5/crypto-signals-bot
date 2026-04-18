@@ -16,6 +16,7 @@ export async function runWrite(argv: string[], commandIndex: number): Promise<vo
     const interval = getValueFromArgv('--interval', argv) ?? '1m'
     const delay = Number(getValueFromArgv('--delay', argv)) || 10
     const logIndicators = isArgv('--indicators', argv)
+    const exotic = isArgv('--exotic', argv) || isArgv('--exotic-indicators', argv)
 
     if(!pair) {
         console.error('--pair (or positional first argument) is required for the write command')
@@ -41,7 +42,7 @@ export async function runWrite(argv: string[], commandIndex: number): Promise<vo
     const tick = async (): Promise<void> => {
         try {
             const candles = await fetchOhlcv(pair, interval, OHLCV_LIMIT)
-            const composite = computeComposite(candles)
+            const composite = computeComposite(candles, { exotic })
             const row: TickerRow = {
                 pair,
                 interval,
@@ -49,6 +50,8 @@ export async function runWrite(argv: string[], commandIndex: number): Promise<vo
                 price: await getLastPrice(pair),
                 signal: composite.signal
             }
+            if(exotic)
+                row.exoticRating = composite.exoticRating
             if(logIndicators)
                 row.indicators = composite.readings
             writeLogger(row)
