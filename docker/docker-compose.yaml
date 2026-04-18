@@ -1,0 +1,14 @@
+name: crypto-tv-signals-bot
+
+services:
+  bot:
+    image: loice5/crypto-tv-signals-bot:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: ""
+    command: sh
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./volumes/output:/app/output
