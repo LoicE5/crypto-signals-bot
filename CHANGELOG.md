@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.0.0 — 2026-04-18
+
+### Breaking
+- **Package renamed**: `crypto-tv-signals-bot` → `crypto-signals-bot`. Docker
+  image tag (`loice5/crypto-tv-signals-bot:latest`) and git remote URL need to
+  be updated separately by the repo owner.
+- **Signal source replaced**. TradingView Technical Analysis widget scraping
+  (Puppeteer + Chromium) is gone. Signals are now computed locally from
+  Binance OHLCV via `ccxt`, using the documented TradingView "Technical
+  Rating" formula against 26 indicators (15 moving averages + 11 oscillators).
+  CLI commands (`simulate`, `write`, `analyze`) retain identical names, flags
+  and output shapes; old v1.x NDJSON files still analyse correctly.
+- **Removed dependencies**: `puppeteer`, `protobufjs`. No more Chrome install
+  step, no more `PUPPETEER_NO_SANDBOX` handling.
+- **Removed files**: `src/server.ts` (API backend for the deleted web UI),
+  `src/functions.ts`, `src/tools.ts`, `src/exchanges.ts`, `src/interfaces.ts`
+  — replaced by a layered module tree in `src/`.
+
+### Added
+- `technicalindicators` as the local TA engine (MIT-licensed, 90+ indicators).
+- **Per-indicator breakdown** in NDJSON written by `write`: each row now
+  includes an `indicators` array with every indicator's name, group, value,
+  and vote (`-1` / `0` / `+1`). Enables post-hoc per-indicator ROI analysis
+  without re-fetching data.
+- **Positional-argument shortcut**: `bun start simulate BTCUSDT` and
+  `bun start analyze ./file.ndjson` now work alongside the existing
+  `--pair=` / `--path=` flag forms. Flags win if both are given.
+- New CLI commands `simulate`, `write`, `analyze` all accept the positional
+  form. Interactive clack menu unchanged.
+- **Full test suite** under `test/`: indicators, aggregator, ROI math, CLI arg
+  parsing, NDJSON I/O. All tests run offline from hand-crafted fixtures.
+
+### Changed
+- `src/` restructured into subdirectories by concern:
+  `commands/` (handlers), `signals/` (market + indicators + aggregator),
+  `analysis/` (ROI math), `lib/` (argv/ndjson/logger utilities).
+- Scroll logger no longer broadcasts via Server-Sent Events (web frontend was
+  removed).
+- `tsconfig.json`: added `node` to `types` and installed modern
+  `@types/node@25` (the legacy v6 shipped with the project lacked `node:`-prefix
+  module declarations).
+
+### Fixed
+- Ichimoku, Hull MA and VWMA are now included in the indicator panel (the
+  scraped widget included them but couldn't be inspected individually).
+
+### Migration notes for v1.x users
+- Your existing `.ndjson` files analyse identically — the `signal` field
+  continues to use the same `STRONG BUY/BUY/NEUTRAL/SELL/STRONG SELL` enum
+  and the `analyze` command's output shape (`{profit_per_transaction, sum,
+  var}`) is unchanged.
+- Swap any `bun start ... --pair=X` or `--path=X` in scripts for the shorter
+  positional form if you prefer.
+- If you rely on the HTTP API / Bruno tests / web UI: those were removed in
+  the two commits preceding this release. Re-add them in a follow-up if
+  needed.
+
 ## 1.4.0 — 2026-04-17
 
 ### Added

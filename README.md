@@ -1,8 +1,36 @@
-# Crypto TV Signal Bot
+# Crypto Signals Bot
 
-> **Alpha** — Missing features, use at your own risk. Contributions are welcome.
+> **Alpha** — Missing features, use at your own risk. Contributions welcome.
 
-This tool uses Puppeteer to scrape [TradingView's Technical Analysis Widget](https://www.tradingview.com/widget/technical-analysis/) and report signals for cryptocurrency pairs.
+A Bun + TypeScript CLI that fetches OHLCV candles from Binance (via `ccxt`),
+computes **26 technical indicators** locally, and aggregates them into a
+composite `STRONG BUY` / `BUY` / `NEUTRAL` / `SELL` / `STRONG SELL` verdict
+using TradingView's published "Technical Rating" formula.
+
+Three commands:
+
+- **simulate** — print live price + composite signal + per-indicator breakdown on a loop
+- **write** — record price, signal and per-indicator readings over time into a `.ndjson` file (one JSON object per line, always valid, safe through crashes)
+- **analyze** — estimate ROI from a previously written `.ndjson` file using the `signal` field:
+  - `STRONG BUY` → long ×2
+  - `BUY` → long ×1
+  - `NEUTRAL` → exit market
+  - `SELL` → short ×1
+  - `STRONG SELL` → short ×2
+
+An `--inverted` flag reverses all positions.
+
+## Setup
+
+```bash
+bun install
+```
+
+No browser or headless Chrome required — signals are computed from Binance
+OHLCV using the [`technicalindicators`](https://www.npmjs.com/package/technicalindicators)
+package.
+
+## Usage
 
 Run without arguments for an interactive CLI with arrow navigation:
 
@@ -10,78 +38,38 @@ Run without arguments for an interactive CLI with arrow navigation:
 bun start
 ```
 
-Or pass a command directly:
-
-Three commands are available:
-
-- **simulate** — Print the current price and TradingView signal for a pair at regular intervals
-- **write** — Record price and signal data over time into a `.ndjson` file (one JSON object per line — always valid, safe through crashes)
-- **analyze** — Estimate ROI from a previously written `.ndjson` file, based on the following strategy:
-  - `STRONG BUY` → long x2
-  - `BUY` → long x1
-  - `NEUTRAL` → exit market
-  - `SELL` → short x1
-  - `STRONG SELL` → short x2
-
-  An `--inverted` flag reverses all positions.
-
----
-
-## Setup
-
-Install dependencies:
-
-```bash
-bun install
-```
-
-Install Chrome (stored in `~/.cache/puppeteer`, shared across projects):
-
-```bash
-bun run install:chrome
-```
-
----
-
-## Usage
+Or pass a command directly. Every command accepts its primary input either as
+a **first positional argument** or via the equivalent `--pair` / `--path` flag
+(whichever is easier to type).
 
 ### simulate
 
 Print price and signal for a pair on a 1-second loop:
 
 ```bash
-# BTC/USDT on the 1-minute interval (default)
-bun start simulate --pair=BTCUSDT
+# Positional pair
+bun start simulate BTCUSDT
+bun start simulate ETHUSDT --interval=4h
+bun start simulate SOLUSDT --interval=1D
 
-# ETH/USDT on the 4-hour interval
-bun start simulate --pair=ETHUSDT --interval=4h
-
-# SOL/USDT on the daily interval
-bun start simulate --pair=SOLUSDT --interval=1D
-
-# BNB/USDT on the weekly interval
-bun start simulate --pair=BNBUSDT --interval=1W
+# Flag form (equivalent)
+bun start simulate --pair=BTCUSDT --interval=1h
 ```
 
 ### write
 
-Record price and signal to a `.ndjson` file in `./output/` (NDJSON — one JSON object per line):
+Record price + signal + per-indicator breakdown to a `.ndjson` file in `./output/`:
 
 ```bash
-# BTC/USDT every 10 seconds (default delay), 1-minute interval
-bun start write --pair=BTCUSDT
+# Positional pair
+bun start write BTCUSDT --delay=10
+bun start write ETHUSDT --interval=15m --delay=30
 
-# ETH/USDT every 30 seconds on the 15-minute interval
-bun start write --pair=ETHUSDT --interval=15m --delay=30
-
-# ADA/USDT every 5 minutes on the 1-hour interval
+# Flag form
 bun start write --pair=ADAUSDT --interval=1h --delay=300
 
-# BTC/USDT every 60 seconds on the 4-hour interval
-bun start write --pair=BTCUSDT --interval=4h --delay=60
-
-# XRP/USDT every 2 minutes on the daily interval
-bun start write --pair=XRPUSDT --interval=1D --delay=120
+# Include the full 26-indicator breakdown on every row
+bun start write BTCUSDT --interval=1h --delay=10 --indicators
 ```
 
 ### analyze
@@ -89,141 +77,82 @@ bun start write --pair=XRPUSDT --interval=1D --delay=120
 Estimate profit from a previously written file:
 
 ```bash
-# Standard strategy
-bun start analyze --path=./output/BTCUSDT_1m_14-3-2026.ndjson
+# Positional path
+bun start analyze ./output/BTCUSDT_1m_18-4-2026.ndjson
+bun start analyze ./output/BTCUSDT_4h_18-4-2026.ndjson --inverted
+bun start analyze ./output/BTCUSDT_1h_18-4-2026.ndjson --fee=0.001 --slippage=0.0005
 
-# Inverted strategy (short on BUY, long on SELL)
-bun start analyze --path=./output/BTCUSDT_1m_14-3-2026.ndjson --inverted
+# Flag form
+bun start analyze --path=./output/BTCUSDT_1m_18-4-2026.ndjson --inverted
 
-# Absolute path
-bun start analyze --path=/home/user/data/ETHUSDT_4h_1-1-2026.ndjson
-
-# Inverted with flag=true syntax
-bun start analyze --path=./output/SOLUSDT_1D_14-3-2026.ndjson --inverted=true
-
-# With a 100 USDT investment per trade (profits expressed in USDT, var as % of 100 USDT)
-bun start analyze --path=./output/BTCUSDT_1m_14-3-2026.ndjson --amount=100
-
-# With a 0.5 ETH investment per trade for a LTC/ETH pair
-bun start analyze --path=./output/LTCETH_1m_14-3-2026.ndjson --amount=0.5
-
-# Override the default exchange fee (0.1% taker on Binance) — e.g. VIP tier at 0.05%
-bun start analyze --path=./output/BTCUSDT_1m_14-3-2026.ndjson --fee=0.0005
-
-# Add 5 bps per leg of slippage (recommended for realistic backtests)
-bun start analyze --path=./output/BTCUSDT_1m_14-3-2026.ndjson --slippage=0.0005
+# Per-trade investment sizing (profits expressed in quote currency)
+bun start analyze ./output/BTCUSDT_1m_18-4-2026.ndjson --amount=100
 ```
 
 #### Estimating slippage
 
 The `--slippage` flag charges a per-leg execution cost on top of `--fee`,
-mimicking the price impact of crossing the spread or walking the book.
-Sensible starting values for **market orders** of small size on Binance spot:
+mimicking the price impact of crossing the spread or walking the book. Sensible
+starting values for **market orders** of small size on Binance spot:
 
 | Pair tier                         | Suggested `--slippage` (per leg) |
 |-----------------------------------|----------------------------------|
 | BTC, ETH (top liquidity)          | `0.0001` – `0.0003`              |
 | BNB, SOL, XRP (top-20 alts)       | `0.0003` – `0.0008`              |
-| Lower-liquidity alts              | `0.001`+                          |
+| Lower-liquidity alts              | `0.001`+                         |
 | Order size > $100k or thin books  | scale up — measure your fills    |
-
-For a more rigorous estimate, record top-of-book bid/ask alongside the last
-price during `write`, then use `(ask − bid) / 2 / mid` as the realised
-half-spread per leg. For institutional-size orders, simulate consuming the
-real order book via `exchange.fetchOrderBook(pair)` instead of using a flat
-rate.
-
----
 
 ## Arguments
 
 | Option | Commands | Description | Allowed values | Default |
 |---|---|---|---|---|
-| `--pair` | simulate, write | Cryptocurrency pair | Any valid Binance pair (e.g. `BTCUSDT`, `ETHDAI`) | required |
-| `--interval` | simulate, write | TradingView analysis interval | `1m` `5m` `15m` `30m` `1h` `2h` `4h` `1D` `1W` `1M` | `1m` |
-| `--delay` | write | Seconds between each fetch and write | Any number — below 1 or above 600 is not recommended | `10` |
-| `--path` | analyze | Path to a `.ndjson` file to analyze | Any valid file path | required |
+| *positional* or `--pair` | simulate, write | Cryptocurrency pair | Any valid Binance pair (e.g. `BTCUSDT`) | required |
+| `--interval` | simulate, write | Candle interval | `1m` `5m` `15m` `30m` `1h` `2h` `4h` `1D` `1W` `1M` | `1m` |
+| `--delay` | write | Seconds between each fetch and write | Any positive number | `10` |
+| `--indicators` | write | Embed the full per-indicator breakdown inside each NDJSON row (bigger files, enables per-indicator post-hoc ROI) | flag or `=true` | `false` |
+| *positional* or `--path` | analyze | Path to a `.ndjson` file | Any valid file path | required |
 | `--inverted` | analyze | Invert all positions (short on BUY, long on SELL) | flag or `=true` | `false` |
-| `--amount` | analyze | Investment per trade in quote currency (e.g. USDT for BTCUSDT, ETH for CAKEETH, BTC for BCHBTC). Profits are scaled accordingly; `var` becomes total profit as % of this amount. When omitted, profits are per 1 unit of base currency. | Any positive number | omitted |
-| `--fee` | analyze | Override the per-leg taker fee. Applied on both entry and exit. | Decimal in `[0, 1)` — e.g. `0.001` for 0.1% | exchange default (Binance: `0.001`) |
-| `--slippage` | analyze | Per-leg execution slippage. Added to `--fee` on each leg of every trade. See [Estimating slippage](#estimating-slippage). | Decimal in `[0, 1)` — e.g. `0.0005` for 5 bps | `0` |
+| `--amount` | analyze | Investment per trade in quote currency | Any positive number | omitted |
+| `--fee` | analyze | Per-leg taker fee, applied on both legs | Decimal in `[0, 1)` | `0.001` (Binance default) |
+| `--slippage` | analyze | Per-leg execution slippage, added to fee | Decimal in `[0, 1)` | `0` |
 
----
+## How the signal is computed
+
+Each tick:
+
+1. Fetch the last 250 candles for `pair` at `interval` from Binance.
+2. Compute **15 moving-average indicators** (SMA & EMA at 10/20/30/50/100/200, Hull MA 9, VWMA 20, Ichimoku).
+3. Compute **11 oscillator indicators** (RSI 14, Stochastic 14/3/3, CCI 20, ADX 14 + DI, Awesome Oscillator, Momentum 10, MACD 12/26/9, Stochastic RSI 3/3/14/14, Williams %R 14, Bull Bear Power 13, Ultimate Oscillator 7/14/28).
+4. Each indicator emits `+1` (bullish), `0` (neutral), or `−1` (bearish) per TradingView's published rules.
+5. Group ratings: `maRating = mean(MA votes)`, `oscRating = mean(osc votes)`, then `score = (maRating + oscRating) / 2` — a number in `[-1, 1]`.
+6. Map score to verdict: `>0.5`→STRONG BUY, `>0.1…≤0.5`→BUY, `[-0.1,0.1]`→NEUTRAL, `[-0.5,-0.1)`→SELL, `<-0.5`→STRONG SELL.
+
+The composite signal is always written to NDJSON in `write` mode. Pass
+`--indicators` to additionally embed every indicator's value and vote on each
+row — useful for later per-indicator ROI analysis at the cost of larger files.
 
 ## Development
 
-Run with hot-reload on file save:
-
 ```bash
-bun run dev simulate --pair=BTCUSDT --interval=1m
+bun run dev simulate --pair=BTCUSDT --interval=1m   # hot-reload
+bun test                                            # run tests
+bun run lint                                        # ESLint
+bun run typecheck                                   # tsc --noEmit
+bun run build:linux-x64                             # standalone binaries
 ```
 
-Other available commands:
-
-```bash
-bun test              # Run the test suite
-bun run lint          # Run ESLint
-bun run typecheck     # Type-check with tsc (no emit)
-bun run build              # Build all 4 targets (linux-x64, linux-arm64, macos-x64, macos-arm64)
-bun run build:linux-x64   # Linux x64  → dist/crypto-tv-signals-bot-linux-x64
-bun run build:linux-arm64 # Linux arm64 → dist/crypto-tv-signals-bot-linux-arm64
-bun run build:macos-x64   # macOS x64  → dist/crypto-tv-signals-bot-macos-x64
-bun run build:macos-arm64 # macOS arm64 → dist/crypto-tv-signals-bot-macos-arm64
-```
-
----
-
-## Web UI
-
-Start the API server (port 3001):
-
-```bash
-bun run server
-```
-
-Start the Next.js frontend (port 3000, separate terminal):
-
-```bash
-bun run frontend:dev
-```
-
-Open `http://localhost:3000` to use the web interface. The UI mirrors the CLI: analyze .ndjson files, check prices, and control simulate/write sessions.
-
-<details>
-<summary><b>Screenshot</b></summary>
-
-![Web UI screenshot](images/web_screenshot.jpeg)
-
-</details>
-
-### Bruno API tests
-
-Requires a running server (`bun run server`):
-
-```bash
-bun run bruno
-```
 ## Docker
 
-Build the image:
+**Note**: the Docker image still references the v1.x (Puppeteer/Chromium)
+toolchain and needs to be rebuilt for v2.0 — there is no browser dependency
+anymore.
 
 ```bash
 bun run docker:build
-```
-
-Run with Docker Compose (pass a command after `--`):
-
-```bash
 bun run docker:up
-# Override the default command:
-docker compose -f docker/docker-compose.yaml run --rm bot bun simulate --pair=BTCUSDT
 ```
 
 Output `.ndjson` files are persisted to `docker/volumes/output/` on the host.
-
-The `PUPPETEER_NO_SANDBOX=true` environment variable is set in the Compose service by default, enabling Chromium to run inside Docker without a user-namespace sandbox.
-
----
 
 ## Contribute
 

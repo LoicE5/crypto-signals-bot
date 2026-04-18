@@ -1,13 +1,17 @@
 import * as clack from '@clack/prompts'
-import puppeteer from 'puppeteer'
-import { validIntervals } from './constants'
-import { analyseJsonTable, getIndicator, getLastPrice, isPairValid, logJsonTable } from './functions'
-import { simulateLogger } from './logger'
+import { validIntervals, OHLCV_LIMIT } from './constants'
+import { fetchOhlcv, getLastPrice, isPairValid } from './signals/market'
+import { computeComposite } from './signals/aggregator'
+import { analyseNdjson } from './analysis/roi'
+import { simulateLogger, writeLogger } from './lib/logger'
+import { appendLine, writeFile } from './lib/ndjson'
+import { TickerRow } from './types'
+import { mkdir } from 'node:fs/promises'
 
 export async function discoverNdjsonFiles(): Promise<string[]> {
     const glob = new Bun.Glob('**/*.ndjson')
     const files: string[] = []
-    for await (const file of glob.scan({ cwd: process.cwd() })) {
+    for await(const file of glob.scan({ cwd: process.cwd() })) {
         if(!file.startsWith('node_modules/'))
             files.push(`./${file}`)
     }
@@ -23,7 +27,7 @@ async function promptPairAndInterval(): Promise<{ pair: string, interval: string
     if(clack.isCancel(pair)) return undefined
 
     const interval = await clack.select({
-        message: 'TradingView interval',
+        message: 'Interval',
         options: [...validIntervals].map(value => ({ value, label: value }))
     })
     if(clack.isCancel(interval)) return undefined
@@ -32,12 +36,12 @@ async function promptPairAndInterval(): Promise<{ pair: string, interval: string
 }
 
 export async function runCli(): Promise<void> {
-    clack.intro('Crypto TV Signals Bot')
+    clack.intro('Crypto Signals Bot')
 
     const command = await clack.select({
         message: 'What would you like to do?',
         options: [
-            { value: 'simulate', label: 'simulate', hint: 'print live price + signal on a loop' },
+            { value: 'simulate', label: 'simulate', hint: 'print live price + composite signal on a loop' },
             { value: 'write',    label: 'write',    hint: 'record price + signal to .ndjson file' },
             { value: 'analyze',  label: 'analyze',  hint: 'estimate ROI from a .ndjson file' }
         ]
@@ -73,7 +77,7 @@ export async function runCli(): Promise<void> {
         spinner.start('Analyzing…')
 
         try {
-            const result = await analyseJsonTable(filePath as string, inverted as boolean)
+            const result = await analyseNdjson(filePath as string, inverted as boolean)
             spinner.stop('Analysis complete')
             if(result === undefined) {
                 clack.log.warn('No signal changes found — cannot compute profit.')
@@ -82,16 +86,15 @@ export async function runCli(): Promise<void> {
                 clack.log.info(`Sum          : ${result.sum}`)
                 clack.log.info(`Variation    : ${result.var}`)
             }
-        } catch(analysisError: unknown) {
+        } catch(analyzeError: unknown) {
             spinner.stop('Analysis failed')
-            clack.log.error(String(analysisError))
+            clack.log.error(String(analyzeError))
         }
 
         clack.outro('Done.')
         return
     }
 
-    // simulate and write both need a pair + interval
     const pairInterval = await promptPairAndInterval()
     if(!pairInterval) { clack.cancel('Cancelled.'); return }
     const { pair, interval } = pairInterval
@@ -107,10 +110,6 @@ export async function runCli(): Promise<void> {
     }
     spinner.stop('Pair validated')
 
-    const browserArgs = process.env.PUPPETEER_NO_SANDBOX === 'true'
-        ? ['--no-sandbox', '--disable-setuid-sandbox']
-        : []
-
     if(command === 'write') {
         const delayInput = await clack.text({
             message: 'Delay between records (seconds)',
@@ -123,22 +122,60 @@ export async function runCli(): Promise<void> {
         })
         if(clack.isCancel(delayInput)) { clack.cancel('Cancelled.'); return }
 
+        const logIndicators = await clack.confirm({
+            message: 'Include full per-indicator breakdown in each row? (bigger files, richer analysis)',
+            initialValue: false
+        })
+        if(clack.isCancel(logIndicators)) { clack.cancel('Cancelled.'); return }
+
         const delay = Number(delayInput) || 10
-        const browser = await puppeteer.launch({ args: browserArgs })
-        process.on('SIGINT', async () => { await browser.close(); process.exit(0) })
-        clack.outro(`Writing ${pair} @ ${interval} every ${delay}s — press Ctrl+C to stop.`)
-        await logJsonTable(browser, pair, interval, delay)
+        await mkdir('./output', { recursive: true })
+        const date = new Date()
+        const fileName = `output/${pair}_${interval}_${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}.ndjson`
+        await writeFile(fileName, '')
+
+        clack.outro(`Writing ${pair} @ ${interval} every ${delay}s to ${fileName} — press Ctrl+C to stop.`)
+
+        const tick = async (): Promise<void> => {
+            try {
+                const candles = await fetchOhlcv(pair, interval, OHLCV_LIMIT)
+                const composite = computeComposite(candles)
+                const row: TickerRow = {
+                    pair,
+                    interval,
+                    unix_time: Date.now(),
+                    price: await getLastPrice(pair),
+                    signal: composite.signal
+                }
+                if(logIndicators)
+                    row.indicators = composite.readings
+                writeLogger(row)
+                await appendLine(fileName, JSON.stringify(row))
+            } catch(writeError: unknown) {
+                console.error('Failed to write row:', writeError)
+            }
+        }
+
+        await tick()
+        setInterval(tick, delay * 1000)
         return
     }
 
     // simulate
-    const browser = await puppeteer.launch({ args: browserArgs })
-    process.on('SIGINT', async () => { await browser.close(); process.exit(0) })
     clack.outro(`Simulating ${pair} @ ${interval} — press Ctrl+C to stop.`)
-
-    setInterval(async () => {
-        const price = await getLastPrice(pair)
-        const signal = await getIndicator(browser, pair, interval)
-        simulateLogger(`Pair: ${pair} | Interval: ${interval} | Price: ${price} | Signal: ${signal}`)
-    }, 1000)
+    const tick = async (): Promise<void> => {
+        try {
+            const candles = await fetchOhlcv(pair, interval, OHLCV_LIMIT)
+            const composite = computeComposite(candles)
+            const price = await getLastPrice(pair)
+            simulateLogger(
+                `Pair: ${pair} | Interval: ${interval} | Price: ${price} | ` +
+                `Signal: ${composite.signal} (score ${composite.score.toFixed(3)})`
+            )
+        } catch(simulateError: unknown) {
+            console.error('Simulate tick failed:', simulateError)
+        }
+    }
+    await tick()
+    setInterval(tick, 1000)
 }

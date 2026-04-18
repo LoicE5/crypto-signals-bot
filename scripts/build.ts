@@ -26,7 +26,7 @@ const projectRoot = import.meta.dir.replace(/\/scripts$/, '')
 await mkdir(`${projectRoot}/dist`, { recursive: true })
 
 for(const target of targets) {
-    const outfile = `${projectRoot}/dist/crypto-tv-signals-bot-${target}`
+    const outfile = `${projectRoot}/dist/crypto-signals-bot-${target}`
     console.info(`Building ${target} → ${outfile}`)
 
     // cd /tmp before building to avoid virtiofs cross-device rename on macOS dev environments
