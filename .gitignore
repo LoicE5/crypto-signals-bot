@@ -6,6 +6,7 @@ dist/
 .*-*.bun-build
 PROMPT.md
 REPORT.md
+PLAN.md
 docker/volumes/output/*
 !docker/volumes/output/.gitkeep
 temp/

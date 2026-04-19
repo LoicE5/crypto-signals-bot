@@ -2,7 +2,7 @@ name: crypto-tv-signals-bot
 
 services:
   bot:
-    image: loice5/crypto-tv-signals-bot:latest
+    image: loice5/crypto-signals-bot:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
